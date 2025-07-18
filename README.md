@@ -8,6 +8,8 @@ Splunk deployment server should be already enabled/configured
 
 Change what needs to be changed in the main.yml in the defaults folder
 
+add inventory with desired hosts file
+
 
 Features : 
 
