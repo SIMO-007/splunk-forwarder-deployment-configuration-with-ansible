@@ -1,0 +1,32 @@
+---
+- name: Ensure SSH is ready before continuing
+  wait_for_connection:
+    timeout: 10
+
+- name: Check if Splunk is installed in the provided paths
+  stat:
+    path: "{{ item }}/bin/splunk"
+  loop: "{{ splunk_forwarder_paths }}"
+  register: splunk_check
+
+- name: Set correct Splunk path
+  set_fact:
+    splunk_path: "{{ splunk_check.results | selectattr('stat.exists', 'equalto', true) | map(attribute='item') | first }}"
+  when: splunk_check.results | selectattr('stat.exists', 'equalto', true) | list | length > 0
+
+- name: Fail if Splunk is not installed in any of the paths
+  fail:
+    msg: "Splunk not found in any of the expected paths!"
+  when: splunk_path is not defined
+
+- name: Debug the found Splunk path
+  debug:
+    msg: "Splunk is installed in: {{ splunk_path }}"
+
+- name: Execute install-sysstat.sh
+  command: "{{ splunk_path }}/etc/apps/sysstat-install/bin/install-sysstat.sh"
+  when: splunk_path is defined
+
+- name: Restart Splunk
+  command: "{{ splunk_path }}/bin/splunk restart"
+  when: splunk_path is defined

@@ -1,0 +1,85 @@
+---
+- name: Ensure SSH is ready before continuing
+  wait_for_connection:
+    timeout: 10
+
+- name: Check if Splunk is already installed
+  stat:
+    path: "{{ item }}"
+  loop:
+    - "/opt/splunkforwarder/bin/splunk"
+    - "/opt/splunk/splunkforwarder/bin/splunk"
+  register: splunk_check
+
+- name: Set Splunk installation status
+  set_fact:
+    splunk_installed: "{{ splunk_check.results | selectattr('stat.exists', 'equalto', true) | list | length > 0 }}"
+
+- name: Debug splunk_installed variable
+  debug:
+    msg: "Splunk installed: {{ splunk_installed }}"
+
+- name: Check connectivity to Splunk main using telnet
+  shell: "echo 'quit' | telnet {{ item.ip }} {{ item.port }} 2>/dev/null | grep -q 'Connected' && echo 'success' || echo 'failed'"
+  register: telnet_result
+  changed_when: false
+  with_items:
+    - { ip: "{{ splunk_public_ip }}", port: "9997" }
+    - { ip: "{{ splunk_public_ip }}", port: "8089" }
+
+- name: Choose the best IP based on connectivity
+  set_fact:
+    chosen_ip: >-
+      {% if telnet_result.results[0].stdout == 'success' and telnet_result.results[1].stdout == 'success' %}
+        {{ splunk_public_ip }}
+      {% else %}
+        "NO_CONNECTION"
+      {% endif %}
+
+- name: Fail if no connection is available
+  fail:
+    msg: "No valid Splunk connection found! Skipping installation."
+  when: chosen_ip == "NO_CONNECTION"
+
+- name: Install Splunk Forwarder (if not installed)
+  block:
+    - name: Download Splunk Forwarder RPM package
+      get_url:
+        url: "{{ splunk_forwarder_url }}"
+        dest: "/tmp/{{ splunk_forwarder_pkg }}"
+
+    - name: Install Splunk Forwarder
+      command: "rpm -i /tmp/{{ splunk_forwarder_pkg }}"
+
+    - name: Remove installation package
+      file:
+        path: "/tmp/{{ splunk_forwarder_pkg }}"
+        state: absent
+  when: not splunk_installed
+
+- name: Configure and start Splunk
+  block:
+    - name: Accept license and set admin password
+      command: "/opt/splunkforwarder/bin/splunk start --accept-license --no-prompt --answer-yes --seed-passwd {{ splunk_admin_pass }}"
+
+    - name: Stop Splunk
+      command: "/opt/splunkforwarder/bin/splunk stop"
+
+    - name: Disable boot-start
+      command: "/opt/splunkforwarder/bin/splunk disable boot-start"
+
+    - name: Enable boot-start
+      command: "/opt/splunkforwarder/bin/splunk enable boot-start"
+
+    - name: Start Splunk
+      command: "/opt/splunkforwarder/bin/splunk start"
+
+    - name: Configure deployment server
+      command: "/opt/splunkforwarder/bin/splunk set deploy-poll {{ chosen_ip }}:8089 -auth admin:{{ splunk_admin_pass }}"
+
+    - name: Configure forwarding
+      command: "/opt/splunkforwarder/bin/splunk add forward-server {{ chosen_ip }}:9997 -auth admin:{{ splunk_admin_pass }}"
+
+    - name: Restart Splunk
+      command: "/opt/splunkforwarder/bin/splunk restart"
+  when: not splunk_installed

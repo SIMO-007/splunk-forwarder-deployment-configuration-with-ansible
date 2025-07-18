@@ -1,0 +1,25 @@
+
+---
+- name: Include Splunk install tasks
+  import_tasks: ubuntu_deploy.yaml
+  when: role_action == "ubuntu"
+
+- name: Include Telnet install tasks
+  import_tasks: alma_deploy.yaml
+  when: role_action == "alma"
+
+- name: Include Sysstat setup tasks
+  import_tasks: syssat.yaml
+  when: role_action == "syssat"
+
+- name: Include ClamAV setup tasks
+  import_tasks: clamav-setup.yaml
+  when: role_action == "clamav"
+
+- name: Execute custom scripts
+  import_tasks: scripts-execute.yaml
+  when: role_action == "scripts"
+
+- name: Execute cert setup
+  import_tasks: cert-execute.yaml
+  when: role_action == "cert"

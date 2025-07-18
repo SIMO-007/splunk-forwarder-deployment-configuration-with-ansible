@@ -1,0 +1,116 @@
+---
+- name: Ensure SSH is ready before continuing
+  wait_for_connection:
+    timeout: 10
+
+- name: Gather OS Distribution Information
+  ansible.builtin.setup:
+    gather_subset:
+      - distribution
+
+- name: Check if ClamAV is installed
+  command: which clamscan
+  register: clamav_installed
+  ignore_errors: true 
+
+- name: Update package lists (RHEL-based)
+  dnf:
+    update_cache: yes
+  when: ansible_facts['os_family'] == "RedHat" and clamav_installed.rc != 0
+
+- name: Install EPEL repository for AlmaLinux
+  dnf:
+    name: epel-release
+    state: present
+    disable_gpg_check: yes
+  when: ansible_facts['os_family'] == "RedHat" and clamav_installed.rc != 0
+
+- name: Create clamav group
+  group:
+    name: clamav
+    state: present
+  when: ansible_facts['os_family'] == "RedHat" and clamav_installed.rc != 0
+
+- name: Create clamav user
+  user:
+    name: clamav
+    group: clamav
+    shell: /bin/false
+    comment: "Clam Antivirus"
+    state: present
+  when: ansible_facts['os_family'] == "RedHat" and clamav_installed.rc != 0
+
+- name: Install ClamAV and ClamAV Daemon (Debian-based)
+  apt:
+    name:
+      - clamav
+      - clamav-daemon
+    state: present
+  when: ansible_facts['os_family'] == "Debian" and clamav_installed.rc != 0
+
+- name: Install ClamAV and ClamAV Daemon (RHEL-based)
+  dnf:
+    name:
+      - clamav
+      - clamd
+      - clamav-update
+    state: present
+    disable_gpg_check: yes
+  when: ansible_facts['os_family'] == "RedHat" and clamav_installed.rc != 0
+
+- name: Stop ClamAV Freshclam service
+  systemd:
+    name: clamav-freshclam
+    state: stopped
+    enabled: yes
+  when: clamav_installed.rc != 0
+
+- name: Start ClamAV Freshclam service
+  systemd:
+    name: clamav-freshclam
+    state: started
+    enabled: yes
+  when: clamav_installed.rc != 0
+
+- name: Enable and start ClamAV daemon (Debian)
+  systemd:
+    name: clamav-daemon
+    state: started
+    enabled: yes
+  when: ansible_facts['os_family'] == "Debian" and clamav_installed.rc != 0
+
+- name: Ensure /etc/clamd.d/service.conf exists (RHEL)
+  copy:
+    dest: /etc/clamd.d/service.conf
+    content: |
+      LogFile /var/log/clamd.service.log
+      LogFileMaxSize 2M
+      LogTime yes
+      LogVerbose yes
+      PidFile /var/run/clamd.service.pid
+      DatabaseDirectory /var/lib/clamav
+      TCPSocket 3310
+      TCPAddr 127.0.0.1
+    owner: clamav
+    group: clamav
+    mode: '0644'
+    backup: yes
+    force: no
+  when: ansible_facts['os_family'] == "RedHat" and clamav_installed.rc != 0
+
+- name: Reload systemd to recognize changes
+  systemd:
+    daemon_reload: yes
+  when: ansible_facts['os_family'] == "RedHat" and clamav_installed.rc != 0
+
+- name: Start clamd@service (RHEL)
+  systemd:
+    name: clamd@service
+    state: started
+  when: ansible_facts['os_family'] == "RedHat" and clamav_installed.rc != 0
+
+- name: Enable clamd@service on boot (RHEL)
+  systemd:
+    name: clamd@service
+    enabled: yes
+  when: ansible_facts['os_family'] == "RedHat" and clamav_installed.rc != 0

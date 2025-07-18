@@ -1,0 +1,49 @@
+---
+- name: Ensure SSH is ready before continuing
+  wait_for_connection:
+    timeout: 10
+
+- name: Check if Splunk is installed at /opt/splunk/splunkforwarder
+  stat:
+    path: "/opt/splunk/splunkforwarder"
+  register: splunkforwarder_stat
+
+- name: Check if Splunk is installed at /opt/splunkforwarder (alternative path)
+  stat:
+    path: "/opt/splunkforwarder"
+  register: splunkforwarder_alt_stat
+
+- name: Check if Splunk is installed at /opt/splunk
+  stat:
+    path: "/opt/splunk/etc"
+  register: splunk_stat
+
+- name: Set cert_script path for /opt/splunk/splunkforwarder
+  set_fact:
+    cert_script: "/opt/splunk/splunkforwarder/etc/apps/custom-scripts/depoly_lets_encrypt.sh"
+  when: splunkforwarder_stat.stat.exists
+
+- name: Set cert_script path for /opt/splunk
+  set_fact:
+    cert_script: "/opt/splunk/etc/apps/custom-scripts/depoly_lets_encrypt.sh"
+  when: splunk_stat.stat.exists
+
+- name: Set cert_script path for /opt/splunkforwarder (alt path)
+  set_fact:
+    cert_script: "/opt/splunkforwarder/etc/apps/custom-scripts/depoly_lets_encrypt.sh"
+  when: splunkforwarder_alt_stat.stat.exists
+
+- name: Fail if no valid Splunk directory is found
+  fail:
+    msg: "Splunk directory not found!"
+  when: not (splunkforwarder_stat.stat.exists or splunk_stat.stat.exists or splunkforwarder_alt_stat.stat.exists)
+
+- name: Ensure the cert script exists
+  stat:
+    path: "{{ cert_script }}"
+  register: cert_script_stat
+
+- name: Execute cert setup script as root
+  command: "{{ cert_script }}"
+  when: cert_script_stat.stat.exists
+  become: true

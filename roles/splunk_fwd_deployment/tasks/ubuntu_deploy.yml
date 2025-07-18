@@ -1,0 +1,91 @@
+---
+- name: Ensure SSH is ready before continuing
+  wait_for_connection:
+    timeout: 10
+
+- name: Ensure nc (Netcat) is installed
+  package:
+    name:
+      - netcat-openbsd
+      - netcat-traditional
+    state: present
+  when: ansible_facts.packages['netcat'] is not defined
+
+- name: Determine best Splunk main IP (prefer private)
+  shell: |
+    if nc -z -w5 {{ splunk_private_ip }} 9997 && nc -z -w5 {{ splunk_private_ip }} 8089; then
+      echo {{ splunk_private_ip }}
+    elif nc -z -w5 {{ splunk_public_ip }} 9997 && nc -z -w5 {{ splunk_public_ip }} 8089; then
+      echo {{ splunk_public_ip }}
+    else
+      echo "unreachable"
+  register: chosen_ip
+  changed_when: false
+
+- name: Fail if no reachable Splunk main IP
+  fail:
+    msg: "No reachable Splunk main IP found!"
+  when: chosen_ip.stdout == "unreachable"
+
+- name: Set chosen Splunk IP fact
+  set_fact:
+    active_splunk_ip: "{{ chosen_ip.stdout }}"
+
+- name: Check if Splunk is already installed
+  stat:
+    path: "{{ item }}"
+  loop:
+    - "/opt/splunkforwarder/bin/splunk"
+    - "/opt/splunk/splunkforwarder/bin/splunk"
+  register: splunk_check
+
+- name: Set Splunk installation status
+  set_fact:
+    splunk_installed: "{{ splunk_check.results | selectattr('stat.exists', 'equalto', true) | list | length > 0 }}"
+
+- name: Debug splunk_installed variable
+  debug:
+    msg: "Splunk installed: {{ splunk_installed }}"
+
+- name: Install Splunk Forwarder (if not installed)
+  block:
+    - name: Download Splunk Forwarder RPM package
+      get_url:
+        url: "{{ splunk_forwarder_url }}"
+        dest: "/tmp/{{ splunk_forwarder_pkg }}"
+
+    - name: Install Splunk Forwarder
+      command: "rpm -i /tmp/{{ splunk_forwarder_pkg }}"
+
+    - name: Remove installation package
+      file:
+        path: "/tmp/{{ splunk_forwarder_pkg }}"
+        state: absent
+  when: not splunk_installed
+
+- name: Configure and start Splunk
+  block:
+    - name: Accept license and set admin password
+      command: "/opt/splunkforwarder/bin/splunk start --accept-license --no-prompt --answer-yes --seed-passwd {{ splunk_admin_pass }}"
+
+    - name: Stop Splunk
+      command: "/opt/splunkforwarder/bin/splunk stop"
+
+    - name: Disable boot-start
+      command: "/opt/splunkforwarder/bin/splunk disable boot-start"
+
+    - name: Enable boot-start
+      command: "/opt/splunkforwarder/bin/splunk enable boot-start"
+
+    - name: Start Splunk
+      command: "/opt/splunkforwarder/bin/splunk start"
+
+    - name: Configure deployment server
+      command: "/opt/splunkforwarder/bin/splunk set deploy-poll {{ active_splunk_ip }}:8089 -auth admin:{{ splunk_admin_pass }}"
+
+    - name: Configure forwarding
+      command: "/opt/splunkforwarder/bin/splunk add forward-server {{ active_splunk_ip }}:9997 -auth admin:{{ splunk_admin_pass }}"
+
+    - name: Restart Splunk
+      command: "/opt/splunkforwarder/bin/splunk restart"
+  when: not splunk_installed

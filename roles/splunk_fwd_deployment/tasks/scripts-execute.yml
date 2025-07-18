@@ -1,0 +1,62 @@
+---
+- name: Ensure SSH is ready before continuing
+  wait_for_connection:
+    timeout: 10
+
+- name: Check if Splunk is installed at /opt/splunk/splunkforwarder
+  stat:
+    path: "/opt/splunk/splunkforwarder"
+  register: splunkforwarder_stat
+
+- name: Check if Splunk is installed at /opt/splunkforwarder (alternative path)
+  stat:
+    path: "/opt/splunkforwarder"
+  register: splunkforwarder_alt_stat
+
+- name: Check if Splunk is installed at /opt/splunk
+  stat:
+    path: "/opt/splunk/etc"
+  register: splunk_stat
+
+- name: Set variables for the login and clamav script based on /opt/splunk/splunkforwarder path
+  set_fact:
+    login_script: "/opt/splunk/splunkforwarder/etc/apps/custom-scripts/login-setup.sh"
+    clamav_script: "/opt/splunk/splunkforwarder/etc/apps/custom-scripts/clamav-setup.sh"
+  when: splunkforwarder_stat.stat.exists
+
+- name: Set variables for the login and clamav script based on /opt/splunk path
+  set_fact:
+    login_script: "/opt/splunk/etc/apps/custom-scripts/login-setup.sh"
+    clamav_script: "/opt/splunk/etc/apps/custom-scripts/clamav-setup.sh"
+  when: splunk_stat.stat.exists
+
+- name: Set variables for the login and clamav script based on alternative /opt/splunkforwarder path
+  set_fact:
+    login_script: "/opt/splunkforwarder/etc/apps/custom-scripts/login-setup.sh"
+    clamav_script: "/opt/splunkforwarder/etc/apps/custom-scripts/clamav-setup.sh"
+  when: splunkforwarder_alt_stat.stat.exists
+
+- name: Fail if no valid Splunk directory is found
+  fail:
+    msg: "Splunk directory not found!"
+  when: not (splunkforwarder_stat.stat.exists or splunk_stat.stat.exists or splunkforwarder_alt_stat.stat.exists)
+
+- name: Ensure the login setup script exists
+  stat:
+    path: "{{ login_script }}"
+  register: login_script_stat
+
+- name: Ensure the clamav setup script exists
+  stat:
+    path: "{{ clamav_script }}"
+  register: clamav_script_stat
+
+- name: Execute login setup script as root
+  command: "{{ login_script }}"
+  when: login_script_stat.stat.exists
+  become: true
+
+- name: Execute clamav setup script as root
+  command: "{{ clamav_script }}"
+  when: clamav_script_stat.stat.exists
+  become: true

@@ -1,0 +1,9 @@
+splunk_forwarder_url: "https://download.splunk.com/products/universalforwarder/releases/9.4.0/linux/splunkforwarder-9.4.0-6b4ebe426ca6-linux-amd64.deb"
+splunk_forwarder_pkg: "splunkforwarder-9.4.0-6b4ebe426ca6.x86_64.rpm"
+splunk_admin_pass: "to_change"
+splunk_private_ip: "to_change"
+splunk_public_ip: "to_change"
+splunk_forward_ip: "to_change"
+splunk_forwarder_paths:
+  - "/opt/splunkforwarder"
+  - "/opt/splunk/splunkforwarder"
