@@ -21,7 +21,7 @@ Features :
 
     Automates Let's Encrypt SSL certificate deployment for Splunk
 
-    Supports multiple Splunk installation paths
+    Supports multiple Splunk installation paths (older versions of splunk forwarder have a different installation path)
 
 - Prerequisites
 
